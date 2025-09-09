@@ -5,6 +5,7 @@ require('dotenv').config({
 });
 const {Pool, Client} = require('pg');
 const express = require('express');
+const bcrypt = require('bcrypt');
 const app = express();
 const port = 3000;
 
@@ -41,7 +42,7 @@ app.listen(port, () => {
     console.log('Server is running at http://localhost:${port}');
 });
 
-app.post('/login', async(req, res) => {
+/*app.post('/login', async(req, res) => {
     const {username} = req.body;
 
     const client = await pool.connect();
@@ -60,6 +61,55 @@ app.post('/login', async(req, res) => {
     } finally {
         client.release();
     }
+})*/
+
+app.post('/login', async(req, res) => {
+    const {username, password} = req.body;
+    const client = await pool.connect();
+    try {
+        const query = `
+            SELECT password_hash, userid FROM users
+            WHERE username = $1
+        `
+        const result = await client.query(query, [username])
+        const {password_hash, userid} = result.rows[0]
+        console.log(result.rows[0])
+        if (await bcrypt.compare(password, password_hash)) {
+            res.status(200).json({ username, userid });
+            console.log('Logged in as:', username)
+        } else {
+            res.status(401).json({ error: 'Invalid username or password.' });
+        }
+    } catch (err) {
+        console.log("Failed to log in: ", err);
+    } finally {
+        client.release();
+    }
+})
+
+app.post('/newUser', async(req, res) => {
+    const {username, password} = req.body;
+    const client = await pool.connect();
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10)
+        const query = `
+            INSERT INTO users (username, password_hash)
+            VALUES ($1, $2)
+            RETURNING *;
+        `;
+        const values = [username, hashedPassword]
+        await client.query(query, values);
+
+        res.status(201).json({ message: 'User registered successfully!' });
+    } catch (err) {
+        if (err.code == '23505') {
+            return res.status(409).json({ error: 'Username already exists.' });
+        }
+        console.error('Registration failed:', err);
+        res.status(500).json({ error: 'Registration failed.' });
+    } finally {
+        client.release()
+    }
 })
 
 app.get('/returnUserID', async(req, res) => {
@@ -68,11 +118,11 @@ app.get('/returnUserID', async(req, res) => {
     const client = await pool.connect();
     try {
         const result = await client.query(
-            'SELECT id FROM users WHERE username = $1',
+            'SELECT userid FROM users WHERE username = $1',
             [username]
         );
         if (result.rows.length > 0) {
-            const userID = result.rows[0].id;
+            const userID = result.rows[0].userid;
             console.log('User ID for ${username} is: ${userID}');
             console.log(userID);
             console.log(typeof userID)
@@ -114,7 +164,7 @@ app.post('/update', async (req, res) => {
 })
 
 app.post('/updatestats', async (req, res) => {
-    const {id, word, win} = req.body;
+    const {userid, word, win} = req.body;
 
     const client = await pool.connect();
     try {
@@ -125,7 +175,7 @@ app.post('/updatestats', async (req, res) => {
             SET wins = word_stats.wins + 1,
             losses = word_stats.losses + 1;
         `;
-        const values = [id, word, win]
+        const values = [userid, word, win]
         const result = await client.query(query, values)
         console.log("Updated stats successfully")
     } catch (err) {
@@ -146,8 +196,8 @@ app.get('/fetchStats', async (req, res) => {
             ws.wins AS won,
             ws.losses AS lost
             FROM users u
-            JOIN word_stats ws ON u.id = ws.userid
-            WHERE u.id = $1
+            JOIN word_stats ws ON u.userid = ws.userid
+            WHERE u.userid = $1
         `;
         const values = [userid];
         const result = await client.query(query, values);

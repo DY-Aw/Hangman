@@ -27,6 +27,11 @@ struct WordStats: Identifiable, Codable {
     }
 }
 
+struct LoginResponse: Decodable {
+    let username: String
+    let userid: Int
+}
+
 class APIFunctions {
     static let functions = APIFunctions()
     private let baseURL = "http://localhost:3000"
@@ -43,20 +48,52 @@ class APIFunctions {
         AF.request("\(baseURL)/update", method: .post, parameters: parameters, encoding: JSONEncoding.default).responseJSON { response in
         }
     }
-    func updateStats(id: Int, word: String, win: Int) {
+    func updateStats(userid: Int, word: String, win: Int) {
         let parameters: [String: Any] = [
-            "id": id,
+            "userid": userid,
             "word": word,
             "win": win
         ]
         AF.request("\(baseURL)/updateStats", method: .post, parameters: parameters, encoding: JSONEncoding.default).responseJSON { response in
         }
     }
-    func login(username: String) {
+    /*func login(username: String) {
         let parameters: [String: Any] = [
             "username": username
         ]
         AF.request("\(baseURL)/login", method: .post, parameters: parameters, encoding: JSONEncoding.default).responseJSON { response in
+        }
+    }*/
+    func login(username: String, password: String) async throws -> LoginResponse {
+        let parameters: [String: Any] = [
+            "username": username,
+            "password": password
+        ]
+        return try await withCheckedThrowingContinuation { continuation in
+            AF.request("\(baseURL)/login", method: .post, parameters: parameters, encoding: JSONEncoding.default).validate().responseDecodable(of: LoginResponse.self) { response in
+                switch response.result {
+                case .success(let loginResponse):
+                    continuation.resume(returning: loginResponse)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+    func newUser(username: String, password: String) async throws -> String {
+        let parameters: [String: Any] = [
+            "username": username,
+            "password": password
+        ]
+        return try await withCheckedThrowingContinuation { continuation in
+            AF.request("\(baseURL)/newUser", parameters: parameters).validate().responseDecodable(of: String.self) { response in
+                    switch response.result {
+                    case .success(let successful):
+                        continuation.resume(returning: successful)
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
+            }
         }
     }
     func returnUserID(username: String) async throws -> Int {
@@ -65,13 +102,13 @@ class APIFunctions {
         ]
         return try await withCheckedThrowingContinuation { continuation in
             AF.request("\(baseURL)/returnUserID", parameters: parameters).validate().responseDecodable(of: Int.self) { response in
-                    switch response.result {
-                    case .success(let userID):
-                        continuation.resume(returning: userID)
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
-                    }
+                switch response.result {
+                case .success(let userID):
+                    continuation.resume(returning: userID)
+                case .failure(let error):
+                    continuation.resume(throwing: error)
                 }
+            }
         }
     }
     func fetchStats(userid: Int) async throws -> [WordStats] {

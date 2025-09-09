@@ -31,36 +31,49 @@ enum GameState {
     case stats
 }
 
+enum UserStats {
+    case loading
+    case empty
+    case notempty
+    case fail
+}
+
 struct LoginView: View{
     @Binding var gameState: GameState
     @State private var usernameInput: String = ""
+    @State private var passwordInput: String = ""
+    @State private var passwordDisplay: String = ""
     var body: some View {
         VStack {
-            TextField("Enter username", text: $usernameInput).multilineTextAlignment(.center).font(.largeTitle).autocorrectionDisabled(true).onChange(of: usernameInput) {
+            TextField("Enter username", text: $usernameInput).multilineTextAlignment(.center).font(.largeTitle).autocorrectionDisabled(true).autocapitalization(.none).onChange(of: usernameInput) {
                 oldValue, newValue in
                 let regex = "^[a-zA-Z0-9_]+$"
                 if !newValue.textFieldRegex(regex: regex) && !newValue.isEmpty {
                     usernameInput = oldValue
                 }
-            }.onSubmit {
-                if !usernameInput.isEmpty {
-                    username = usernameInput
-                    APIFunctions.functions.login(username: username!)
-                    Task {
-                        do {
-                            userID = try await APIFunctions.functions.returnUserID(username: username!)
-                        } catch {
-                            print("Failed to fetch userID:", error)
-                        }
-                    }
-                    gameState = .difficultySelect
+            }
+            SecureField("Enter password", text: $passwordInput).multilineTextAlignment(.center).font(.largeTitle).autocorrectionDisabled(true).autocapitalization(.none).onChange(of: passwordInput) {
+                oldValue, newValue in
+                let regex = "^[a-zA-Z0-9~!@#$%^&*()_+-=\\[\\]{}|;:,.<>?]+$"
+                if !newValue.textFieldRegex(regex: regex) && !newValue.isEmpty {
+                    passwordInput = oldValue
                 }
             }
             Button("Submit") {
-                if !usernameInput.isEmpty {
+                if !usernameInput.isEmpty && !passwordInput.isEmpty {
                     username = usernameInput
-                    APIFunctions.functions.login(username: username!)
-                    gameState = .difficultySelect
+                    Task {
+                        do {
+                            let result = try await APIFunctions.functions.login(username: usernameInput, password: passwordInput)
+                            username = result.username
+                            userID = result.userid
+                            print("Logged in as:", username!, userID!)
+                            gameState = .difficultySelect
+                        } catch {
+                            print("Login failed:", error)
+                        }
+                        
+                    }
                 }
             }.font(.title)
         }
@@ -70,28 +83,38 @@ struct LoginView: View{
 struct DifficultySelectView: View {
     @Binding var gameState: GameState
     var body: some View {
-        VStack {
-            Text("Choose a difficulty:").font(.custom("Arial", size: 40))
-            Button("Normal") {
-                isCustomWord = false
-                word = WordFunctions.wordfunctions.randomMediumWord()
-                if word != "-1" {
-                    gameState = .playing
+        ZStack {
+            VStack {
+                Spacer()
+                Button("Log out") {
+                    gameState = .login
+                    username = nil
+                    userID = nil
+                }.foregroundColor(.red)
+            }
+            VStack {
+                Text("Choose a difficulty:").font(.custom("Arial", size: 40))
+                Button("Normal") {
+                    isCustomWord = false
+                    word = WordFunctions.wordfunctions.randomMediumWord()
+                    if word != "-1" {
+                        gameState = .playing
+                    }
+                }.font(.largeTitle).padding(.vertical)
+                Button("Hard") {
+                    isCustomWord = false
+                    word = WordFunctions.wordfunctions.randomLongWord()
+                    if word != "-1" {
+                        gameState = .playing
+                    }
+                }.font(.largeTitle).padding(.vertical)
+                Button("Custom") {
+                    isCustomWord = true
+                    gameState = .customWord
+                }.font(.largeTitle).padding(.vertical)
+                Button("View Stats") {
+                    gameState = .stats
                 }
-            }.font(.largeTitle).padding(.vertical)
-            Button("Hard") {
-                isCustomWord = false
-                word = WordFunctions.wordfunctions.randomLongWord()
-                if word != "-1" {
-                    gameState = .playing
-                }
-            }.font(.largeTitle).padding(.vertical)
-            Button("Custom") {
-                isCustomWord = true
-                gameState = .customWord
-            }.font(.largeTitle).padding(.vertical)
-            Button("View Stats") {
-                gameState = .stats
             }
         }
     }
@@ -225,7 +248,7 @@ struct WinView: View {
         .onAppear() {
             if !isCustomWord {
                 APIFunctions.functions.update(word: word!, win: 1)
-                APIFunctions.functions.updateStats(id: userID!, word: word!, win: 1)
+                APIFunctions.functions.updateStats(userid: userID!, word: word!, win: 1)
             }
         }
     }
@@ -249,7 +272,7 @@ struct LossView: View {
         .onAppear() {
             if !isCustomWord {
                 APIFunctions.functions.update(word: word!, win: 0)
-                APIFunctions.functions.updateStats(id: userID!, word: word!, win: 0)
+                APIFunctions.functions.updateStats(userid: userID!, word: word!, win: 0)
             }
         }
     }
@@ -257,52 +280,106 @@ struct LossView: View {
 
 struct StatsView: View {
     @Binding var gameState: GameState
+    @State var userStats: UserStats = .loading
     @State private var wordstats: [WordStats] = []
     
     var body: some View {
-        ZStack {
-            Text("Stats for \(username!):").font(.largeTitle)
-            HStack {
-                Spacer()
-                ZStack {
-                    Rectangle().frame(width: 35, height: 25).foregroundColor(.white)
-                    Button("Exit") {
-                        gameState = .difficultySelect
-                    }.padding(.horizontal, 20.0).foregroundColor(.red)
+        switch userStats {
+        case .loading:
+            Text("Loading").task {
+                do {
+                    let stats = try await APIFunctions.functions.fetchStats(userid: userID!)
+                    wordstats = stats
+                } catch {
+                    print("Error fetching stats:", error)
+                    userStats = .fail
+                }
+                if wordstats.isEmpty {
+                    userStats = .empty
+                } else {
+                    userStats = .notempty
                 }
             }
-        }
-        List {
-            HStack {
-                Text("Word").fontWeight(.bold).frame(width: 120, alignment: .leading)
-                Spacer()
-                Text("Played").fontWeight(.bold).frame(width: 55, alignment: .trailing)
-                Text("Won").fontWeight(.bold).frame(width: 40, alignment: .trailing)
-                Text("Lost").fontWeight(.bold).frame(width: 40, alignment: .trailing)
-            }
-            ForEach(wordstats) { stat in
+        case .notempty:
+            ZStack {
+                Text("Stats for \(username!):").font(.largeTitle)
                 HStack {
-                    Text(stat.word).frame(width: 120, alignment: .leading)
                     Spacer()
-                    Text("\(stat.played)").frame(width: 55, alignment: .trailing)
-                    Text("\(stat.won)").frame(width: 40, alignment: .trailing)
-                    Text("\(stat.lost)").frame(width:40, alignment: .trailing)
+                    ZStack {
+                        Rectangle().frame(width: 35, height: 25).foregroundColor(.white)
+                        Button("Exit") {
+                            gameState = .difficultySelect
+                        }.padding(.horizontal, 20.0).foregroundColor(.red)
+                    }
                 }
-            }.listRowBackground(Color.gray.opacity(0.025))
-            HStack {
-                Text("TOTAL:").fontWeight(.bold).frame(width: 120, alignment: .leading)
-                Spacer()
-                Text("\(wordstats.totalPlayed)").frame(width: 55, alignment: .trailing).fontWeight(.bold)
-                Text("\(wordstats.totalWon)").frame(width: 40, alignment: .trailing).fontWeight(.bold)
-                Text("\(wordstats.totalLost)").frame(width: 40, alignment: .trailing).fontWeight(.bold)
             }
-        }.task {
-            do {
-                let stats = try await APIFunctions.functions.fetchStats(userid: userID!)
-                wordstats = stats
-            } catch {
-                print("Error fetching stats:", error)
-            }
+            List {
+                HStack {
+                    Text("Word").fontWeight(.bold).frame(width: 120, alignment: .leading)
+                    Spacer()
+                    Text("Played").fontWeight(.bold).frame(width: 55, alignment: .trailing)
+                    Text("Won").fontWeight(.bold).frame(width: 40, alignment: .trailing)
+                    Text("Lost").fontWeight(.bold).frame(width: 40, alignment: .trailing)
+                }
+                ForEach(wordstats) { stat in
+                    HStack {
+                        Text(stat.word).frame(width: 120, alignment: .leading)
+                        Spacer()
+                        Text("\(stat.played)").frame(width: 55, alignment: .trailing)
+                        Text("\(stat.won)").frame(width: 40, alignment: .trailing)
+                        Text("\(stat.lost)").frame(width:40, alignment: .trailing)
+                    }
+                }.listRowBackground(Color.gray.opacity(0.025))
+                HStack {
+                    Text("TOTAL:").fontWeight(.bold).frame(width: 120, alignment: .leading)
+                    Spacer()
+                    Text("\(wordstats.totalPlayed)").frame(width: 55, alignment: .trailing).fontWeight(.bold)
+                    Text("\(wordstats.totalWon)").frame(width: 40, alignment: .trailing).fontWeight(.bold)
+                    Text("\(wordstats.totalLost)").frame(width: 40, alignment: .trailing).fontWeight(.bold)
+                }
+            }.scrollContentBackground(.hidden).background(Color.gray.opacity(0.1))
+        case .empty:
+            VStack {
+                ZStack {
+                    Text("Stats for \(username!):").font(.largeTitle)
+                    HStack {
+                        Spacer()
+                        ZStack {
+                            Rectangle().frame(width: 35, height: 25).foregroundColor(.white)
+                            Button("Exit") {
+                                gameState = .difficultySelect
+                            }.padding(.horizontal, 20.0).foregroundColor(.red)
+                        }
+                    }
+                }.padding(.bottom, 10).background(.white)
+                VStack {
+                    Spacer()
+                    Text("Nothing to display").font(.largeTitle).foregroundColor(.gray).padding(.vertical, 5)
+                    Text("Play some games to see your stats!").font(.title3).foregroundColor(.gray).multilineTextAlignment(.center)
+                    Spacer()
+                }
+            }.background(Color.gray.opacity(0.1))
+        case .fail:
+            VStack {
+                ZStack {
+                    Text("Stats for \(username!):").font(.largeTitle)
+                    HStack {
+                        Spacer()
+                        ZStack {
+                            Rectangle().frame(width: 35, height: 25).foregroundColor(.white)
+                            Button("Exit") {
+                                gameState = .difficultySelect
+                            }.padding(.horizontal, 20.0).foregroundColor(.red)
+                        }
+                    }
+                }.padding(.bottom, 10).background(.white)
+                VStack {
+                    Spacer()
+                    Text("Error displaying stats").font(.largeTitle).foregroundColor(.gray).padding(.vertical, 5)
+                    Text("Try reloading the page").font(.title3).foregroundColor(.gray).multilineTextAlignment(.center)
+                    Spacer()
+                }
+            }.background(Color.gray.opacity(0.1))
         }
     }
 }
