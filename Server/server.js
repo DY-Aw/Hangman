@@ -72,6 +72,10 @@ app.post('/login', async(req, res) => {
             WHERE username = $1
         `
         const result = await client.query(query, [username])
+        if (!result.rows[0]) {
+            res.status(401).json({ error: 'Invalid username or password.'});
+            throw new Error("Invalid username or password.");
+        }
         const {password_hash, userid} = result.rows[0]
         console.log(result.rows[0])
         if (await bcrypt.compare(password, password_hash)) {
@@ -79,11 +83,35 @@ app.post('/login', async(req, res) => {
             console.log('Logged in as:', username)
         } else {
             res.status(401).json({ error: 'Invalid username or password.' });
+            throw new Error("Invalid username or password.");
         }
     } catch (err) {
         console.log("Failed to log in: ", err);
     } finally {
         client.release();
+    }
+})
+
+app.post('/validateNewUsername', async(req, res) => {
+    const {username} = req.body;
+    const client = await pool.connect();
+    try {
+        const query = `
+        SELECT * FROM users
+        WHERE username = $1
+        `
+        const values = [username];
+        result = await client.query(query, values);
+        if (result.rows[0]) {
+            res.status(409).json("Username already exists")
+            throw new Error("Username already exists")
+        } else {
+            res.status(200).json("Username is unique!")
+        }
+    } catch (err) {
+        console.error("some error idk", err)
+    } finally {
+        client.release()
     }
 })
 
@@ -97,7 +125,7 @@ app.post('/newUser', async(req, res) => {
             VALUES ($1, $2)
             RETURNING *;
         `;
-        const values = [username, hashedPassword]
+        const values = [username, hashedPassword];
         await client.query(query, values);
 
         res.status(201).json({ message: 'User registered successfully!' });

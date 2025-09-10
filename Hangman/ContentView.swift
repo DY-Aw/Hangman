@@ -21,16 +21,20 @@ struct wordStats: Identifiable {
     let lost: Int
 }
 
+// Window switching
 enum GameState {
+    case home
     case playing
     case won
     case lost
     case login
+    case newAccount
     case difficultySelect
     case customWord
     case stats
 }
 
+// Case handling for fetching user stats
 enum UserStats {
     case loading
     case empty
@@ -38,13 +42,64 @@ enum UserStats {
     case fail
 }
 
-struct LoginView: View{
+// Error messages for logging in
+enum LoginErrorHandler {
+    case noError
+    case loginError
+    case blankFields
+}
+
+// Error messages when creating a new username
+enum NewUsernameHandler {
+    case noError
+    case usernameExists
+    case blankFields
+    case otherError
+}
+
+// Error messages when selecting a password
+enum NewPasswordHandler {
+    case noError
+    case passwordsDontMatch
+    case blankFields
+    case otherError
+}
+
+// Username creation or password creation
+enum NewUserCreation {
+    case userCreation
+    case passwordCreation
+}
+
+// Screen: Home
+struct HomeView: View {
     @Binding var gameState: GameState
-    @State private var usernameInput: String = ""
-    @State private var passwordInput: String = ""
-    @State private var passwordDisplay: String = ""
     var body: some View {
         VStack {
+            Text("Hangman").font(.system(size: 50)).padding(.top, 30)
+            Spacer()
+            Image("state0")
+            Button("Log In") {
+                gameState = .login
+            }.font(.system(size: 30)).padding(.vertical, 10)
+            Button("New Account") {
+                gameState = .newAccount
+            }.font(.system(size: 20))
+            Spacer()
+        }
+    }
+}
+
+// Screen: Login
+struct LoginView: View {
+    @Binding var gameState: GameState
+    @State var loginErrorHandler: LoginErrorHandler = .noError
+    @State private var usernameInput: String = ""
+    @State private var passwordInput: String = ""
+    var body: some View {
+        VStack {
+            Text("Welcome Back!").font(.system(size: 40)).padding(.top, 30)
+            Spacer()
             TextField("Enter username", text: $usernameInput).multilineTextAlignment(.center).font(.largeTitle).autocorrectionDisabled(true).autocapitalization(.none).onChange(of: usernameInput) {
                 oldValue, newValue in
                 let regex = "^[a-zA-Z0-9_]+$"
@@ -59,9 +114,16 @@ struct LoginView: View{
                     passwordInput = oldValue
                 }
             }
+            switch loginErrorHandler {
+            case .noError:
+                Text("")
+            case .loginError:
+                Text("Incorrect username or password").foregroundColor(.red)
+            case .blankFields:
+                Text("Make sure all fields are filled in").foregroundColor(.red)
+            }
             Button("Submit") {
                 if !usernameInput.isEmpty && !passwordInput.isEmpty {
-                    username = usernameInput
                     Task {
                         do {
                             let result = try await APIFunctions.functions.login(username: usernameInput, password: passwordInput)
@@ -71,15 +133,144 @@ struct LoginView: View{
                             gameState = .difficultySelect
                         } catch {
                             print("Login failed:", error)
+                            loginErrorHandler = .loginError
                         }
                         
                     }
+                } else {
+                    loginErrorHandler = .blankFields
                 }
             }.font(.title)
+            Spacer()
         }
     }
 }
 
+// Screen: Creating a new account
+struct NewAccountView: View {
+    @Binding var gameState: GameState
+    @State var newUserCreation: NewUserCreation = .userCreation
+    @State var newUsernameHandler: NewUsernameHandler = .noError
+    @State var newPasswordHandler: NewPasswordHandler = .noError
+    @State private var usernameInput: String = ""
+    @State private var passwordInput: String = ""
+    @State private var passwordConfirmation: String = ""
+    @State private var newUsername: String? = nil
+    @State private var newPassword: String? = nil
+    var body: some View {
+        switch newUserCreation {
+        case .userCreation:
+            VStack {
+                Text("Welcome!").font(.system(size: 40)).padding(.top, 30)
+                Text("Choose a username").font(.system(size: 30)).padding(.top, 30)
+                Spacer()
+                TextField("Enter username", text: $usernameInput).multilineTextAlignment(.center).font(.largeTitle).autocorrectionDisabled(true).autocapitalization(.none).onChange(of: usernameInput) {
+                    oldValue, newValue in
+                    let regex = "^[a-zA-Z0-9_]+$"
+                    if !newValue.textFieldRegex(regex: regex) && !newValue.isEmpty {
+                        usernameInput = oldValue
+                    }
+                }
+                switch newUsernameHandler {
+                case .noError:
+                    Text("")
+                case .usernameExists:
+                    Text("Username already exists").foregroundColor(.red)
+                case .blankFields:
+                    Text("Enter a username").foregroundColor(.red)
+                case .otherError:
+                    Text("Error occurred").foregroundColor(.red)
+                }
+                Button("Submit") {
+                    if !usernameInput.isEmpty {
+                        newUsername = usernameInput
+                        Task {
+                            do {
+                                try await APIFunctions.functions.validateNewUsername(username: newUsername!)
+                                print("Username is valid")
+                                newUserCreation = .passwordCreation
+                            } catch UserCreationError.duplicateUsername {
+                                print("Username already exists")
+                                newUsernameHandler = .usernameExists
+                            } catch {
+                                print("Failed to validate username", error)
+                                newUsernameHandler = .otherError
+                            }
+                        }
+                    } else {
+                        newUsernameHandler = .blankFields
+                    }
+                }.font(.title)
+                Spacer()
+            }
+        case .passwordCreation:
+            VStack {
+                Text("Welcome!").font(.system(size: 40)).padding(.top, 30)
+                Text("Choose a password").font(.system(size: 30)).padding(.top, 30)
+                Spacer()
+                SecureField("Enter password", text: $passwordInput).multilineTextAlignment(.center).font(.largeTitle).autocorrectionDisabled(true).autocapitalization(.none).onChange(of: passwordInput) {
+                    oldValue, newValue in
+                    let regex = "^[a-zA-Z0-9~!@#$%^&*()_+-=\\[\\]{}|;:,.<>?]+$"
+                    if !newValue.textFieldRegex(regex: regex) && !newValue.isEmpty {
+                        passwordInput = oldValue
+                    }
+                }
+                SecureField("Confirm password", text: $passwordConfirmation).multilineTextAlignment(.center).font(.largeTitle).autocorrectionDisabled(true).autocapitalization(.none).onChange(of: passwordConfirmation) {
+                    oldValue, newValue in
+                    let regex = "^[a-zA-Z0-9~!@#$%^&*()_+-=\\[\\]{}|;:,.<>?]+$"
+                    if !newValue.textFieldRegex(regex: regex) && !newValue.isEmpty {
+                        passwordConfirmation = oldValue
+                    }
+                }
+                switch newPasswordHandler {
+                case .noError:
+                    Text("")
+                case .passwordsDontMatch:
+                    Text("Passwords must match").foregroundColor(.red)
+                case .blankFields:
+                    Text("Fill in all fields").foregroundColor(.red)
+                case .otherError:
+                    Text("Error occurred").foregroundColor(.red)
+                }
+                Button("Submit") {
+                    print("Button pressed")
+                    if !passwordInput.isEmpty && !passwordConfirmation.isEmpty {
+                        if passwordInput != passwordConfirmation {
+                            newPasswordHandler = .passwordsDontMatch
+                        } else {
+                            print("Submitted")
+                            newPassword = passwordInput
+                            print(newUsername!, passwordInput)
+                            Task {
+                                do {
+                                    try await APIFunctions.functions.newUser(username: newUsername!, password: newPassword!)
+                                    print("User created successfully")
+                                    do {
+                                        let result = try await APIFunctions.functions.login(username: newUsername!, password: newPassword!)
+                                        username = result.username
+                                        userID = result.userid
+                                        gameState = .difficultySelect
+                                    } catch {
+                                        print("Failed to log in", error)
+                                    }
+                                } catch {
+                                    print("Failed to create user", error)
+                                    newPasswordHandler = .otherError
+                                    
+                                }
+                            }
+                        }
+                    } else {
+                        newPasswordHandler = .blankFields
+                    }
+                }
+                Spacer()
+            }
+        }
+    }
+}
+
+// Screen: Selecting a difficulty
 struct DifficultySelectView: View {
     @Binding var gameState: GameState
     var body: some View {
@@ -87,7 +278,7 @@ struct DifficultySelectView: View {
             VStack {
                 Spacer()
                 Button("Log out") {
-                    gameState = .login
+                    gameState = .home
                     username = nil
                     userID = nil
                 }.foregroundColor(.red)
@@ -120,6 +311,7 @@ struct DifficultySelectView: View {
     }
 }
 
+// Screen: Selecting a custom word to play
 struct CustomWordView: View {
     @Binding var gameState: GameState
     @State private var customword: String = ""
@@ -140,6 +332,7 @@ struct CustomWordView: View {
     }
 }
 
+// Screen: Main gameplay
 struct GameView: View {
     @Binding var gameState: GameState
     @State private var guess: String = ""
@@ -228,6 +421,7 @@ struct GameView: View {
     }
 }
 
+// Screen: Won the game
 struct WinView: View {
     @Binding var gameState: GameState
     
@@ -255,6 +449,7 @@ struct WinView: View {
     
 }
 
+// Screen: Lost the game
 struct LossView: View {
     @Binding var gameState: GameState
     
@@ -278,6 +473,7 @@ struct LossView: View {
     }
 }
 
+// Screen: User stats
 struct StatsView: View {
     @Binding var gameState: GameState
     @State var userStats: UserStats = .loading
@@ -384,13 +580,18 @@ struct StatsView: View {
     }
 }
 
+// Screen switcher
 struct ContentView: View {
-    @State var gameState: GameState = .login
+    @State var gameState: GameState = .home
     
     var body: some View {
         switch gameState {
+        case .home:
+            HomeView(gameState: $gameState)
         case .login:
             LoginView(gameState: $gameState)
+        case .newAccount:
+            NewAccountView(gameState: $gameState)
         case .playing:
             GameView(gameState: $gameState)
         case .won:
@@ -407,12 +608,14 @@ struct ContentView: View {
     }
 }
 
+// Handles valid characters in text fields
 extension String {
     func textFieldRegex(regex: String) -> Bool {
         return (self.range(of: regex, options: .regularExpression) != nil)
     }
 }
 
+// Calculate user stat totals
 extension Array where Element == WordStats {
     var totalPlayed: Int {
         self.reduce(0) { $0 + $1.played }

@@ -32,6 +32,11 @@ struct LoginResponse: Decodable {
     let userid: Int
 }
 
+enum UserCreationError: Error {
+    case duplicateUsername
+    case other(Error)
+}
+
 class APIFunctions {
     static let functions = APIFunctions()
     private let baseURL = "http://localhost:3000"
@@ -80,19 +85,40 @@ class APIFunctions {
             }
         }
     }
-    func newUser(username: String, password: String) async throws -> String {
+    func validateNewUsername(username: String) async throws {
+        let parameters: [String: Any] = [
+            "username": username
+        ]
+        return try await withCheckedThrowingContinuation { continuation in
+            AF.request("\(baseURL)/validateNewUsername", method: .post, parameters: parameters, encoding: JSONEncoding.default).validate(statusCode: 200..<300).response { response in
+                if let error = response.error {
+                    if let statusCode = response.response?.statusCode, statusCode == 409 {
+                        continuation.resume(throwing: UserCreationError.duplicateUsername)
+                    } else {
+                        continuation.resume(throwing: UserCreationError.other(error))
+                    }
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+    }
+    func newUser(username: String, password: String) async throws {
         let parameters: [String: Any] = [
             "username": username,
             "password": password
         ]
         return try await withCheckedThrowingContinuation { continuation in
-            AF.request("\(baseURL)/newUser", parameters: parameters).validate().responseDecodable(of: String.self) { response in
-                    switch response.result {
-                    case .success(let successful):
-                        continuation.resume(returning: successful)
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
+            AF.request("\(baseURL)/newUser", method: .post, parameters: parameters, encoding: JSONEncoding.default).validate(statusCode: 200..<300).response { response in
+                if let error = response.error {
+                    if let statusCode = response.response?.statusCode, statusCode == 409 {
+                        continuation.resume(throwing: UserCreationError.duplicateUsername)
+                    } else {
+                        continuation.resume(throwing: UserCreationError.other(error))
                     }
+                } else {
+                    continuation.resume(returning: ())
+                }
             }
         }
     }
