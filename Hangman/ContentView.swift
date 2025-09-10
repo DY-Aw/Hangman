@@ -62,6 +62,7 @@ enum NewPasswordHandler {
     case noError
     case passwordsDontMatch
     case blankFields
+    case failsRequirements
     case otherError
 }
 
@@ -229,44 +230,84 @@ struct NewAccountView: View {
                     Text("Passwords must match").foregroundColor(.red)
                 case .blankFields:
                     Text("Fill in all fields").foregroundColor(.red)
+                case .failsRequirements:
+                    Text("Password must meet requirements").foregroundColor(.red)
                 case .otherError:
                     Text("Error occurred").foregroundColor(.red)
                 }
+                
+                // Password requirements:
+                let (lowerText, lowerColor, lowerValid) = displayRequirement(regex: "[a-z]", text: "Must contain a lowercase letter")
+                let (capitalText, capitalColor, capitalValid) = displayRequirement(regex: "[A-Z]", text: "Must contain a capital letter", currentlyValid: lowerValid)
+                let (numberText, numberColor, numberValid) = displayRequirement(regex: "[0-9]", text: "Must contain a number", currentlyValid: capitalValid)
+                let (specialText, specialColor, specialValid) = displayRequirement(regex: "[ ~!@#$%^&*()_+-=\\[\\]{}|;:,.<>?]", text: "Must contain a special character", currentlyValid: numberValid)
+                
+                let lengthRequirement = passwordInput.count >= 8 && passwordInput.count <= 15
+                
                 Button("Submit") {
                     print("Button pressed")
-                    if !passwordInput.isEmpty && !passwordConfirmation.isEmpty {
-                        if passwordInput != passwordConfirmation {
-                            newPasswordHandler = .passwordsDontMatch
-                        } else {
-                            print("Submitted")
-                            newPassword = passwordInput
-                            print(newUsername!, passwordInput)
-                            Task {
-                                do {
-                                    try await APIFunctions.functions.newUser(username: newUsername!, password: newPassword!)
-                                    print("User created successfully")
+                    if specialValid && lengthRequirement {
+                        if !passwordInput.isEmpty && !passwordConfirmation.isEmpty {
+                            if passwordInput != passwordConfirmation {
+                                newPasswordHandler = .passwordsDontMatch
+                            } else {
+                                print("Submitted")
+                                newPassword = passwordInput
+                                print(newUsername!, passwordInput)
+                                Task {
                                     do {
-                                        let result = try await APIFunctions.functions.login(username: newUsername!, password: newPassword!)
-                                        username = result.username
-                                        userID = result.userid
-                                        gameState = .difficultySelect
+                                        try await APIFunctions.functions.newUser(username: newUsername!, password: newPassword!)
+                                        print("User created successfully")
+                                        do {
+                                            let result = try await APIFunctions.functions.login(username: newUsername!, password: newPassword!)
+                                            username = result.username
+                                            userID = result.userid
+                                            gameState = .difficultySelect
+                                        } catch {
+                                            print("Failed to log in", error)
+                                        }
                                     } catch {
-                                        print("Failed to log in", error)
+                                        print("Failed to create user", error)
+                                        newPasswordHandler = .otherError
+                                        
                                     }
-                                } catch {
-                                    print("Failed to create user", error)
-                                    newPasswordHandler = .otherError
-                                    
                                 }
                             }
+                        } else {
+                            newPasswordHandler = .blankFields
                         }
                     } else {
-                        newPasswordHandler = .blankFields
+                        newPasswordHandler = .failsRequirements
                     }
+                }.font(.title).padding(.vertical, 30)
+                
+                VStack {
+                    if lengthRequirement {
+                        Text("✓ Must be between 8 and 15 characters long").foregroundColor(.green)
+                    } else {
+                        Text("✗ Must be between 8 and 15 characters long").foregroundColor(.red)
+                    }
+                    Text(lowerText).foregroundColor(lowerColor)
+                    Text(capitalText).foregroundColor(capitalColor)
+                    Text(numberText).foregroundColor(numberColor)
+                    Text(specialText).foregroundColor(specialColor)
                 }
+        
                 Spacer()
             }
         }
+    }
+    
+    func displayRequirement(regex: String, text: String, currentlyValid: Bool = true) -> (String, Color, Bool){
+        var symbol: String = "✓"
+        var color: Color = .green
+        var valid = currentlyValid
+        if (passwordInput.range(of: regex, options: .regularExpression) == nil) {
+            symbol = "✗"
+            color = .red
+            valid = false
+        }
+        return (symbol + " " + text, color, valid)
     }
 }
 
