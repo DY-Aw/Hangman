@@ -251,9 +251,7 @@ struct NewAccountView: View {
                             if passwordInput != passwordConfirmation {
                                 newPasswordHandler = .passwordsDontMatch
                             } else {
-                                print("Submitted")
                                 newPassword = passwordInput
-                                print(newUsername!, passwordInput)
                                 Task {
                                     do {
                                         try await APIFunctions.functions.newUser(username: newUsername!, password: newPassword!)
