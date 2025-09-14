@@ -12,7 +12,13 @@ The app implements the basic Hangman gameplay with a simple hand-drawn interface
 
 ## Database and Statistics
 
-Games are recorded in a PostgreSQL database, which tracks both global and per-user statistics.
+Games are recorded in a PostgreSQL database, which tracks both global and per-user statistics. Communication between the app and database is handled through a Node.js server: the app sends API calls to the server, which then issues SQL queries and returns the results.
+
+![AppServerDBUML](Images/AppServerDBUML.png)
+
+The database holds the key data for the app: 
+
+- User info: each user's username, user ID, and hashed password.
 
 - Global stats: how many times each word has been played, won, or lost.
 
