@@ -14,7 +14,7 @@ The app implements the basic Hangman gameplay with a simple hand-drawn interface
 
 Games are recorded in a PostgreSQL database, which tracks both global and per-user statistics. Communication between the app and database is handled through a Node.js server: the app sends API calls to the server, which then issues SQL queries and returns the results.
 
-![AppServerDBUML](Images/AppServerDBUML.png)
+![HangmanClientServer](Images/HangmanClientServer.png)
 
 The database holds the key data for the app: 
 
@@ -23,6 +23,8 @@ The database holds the key data for the app:
 - Global stats: how many times each word has been played, won, or lost.
 
 - User stats: per-user records of games played, words attempted, and win/loss history.
+
+![HangmanDBUML](Images/HangmanDBUML.png)
 
 This required creating multiple tables (users, words, and games) and using joins to connect user IDs with word statistics. Seeing the database update dynamically as games were played was a major milestone.
 
@@ -63,3 +65,7 @@ Through this project, I gained experience with:
 - Improving the UI (replacing placeholder hand-drawn graphics).
 
 - Expanding user features and potentially releasing the app if it grows enough.
+
+## Demo
+
+https://github.com/user-attachments/assets/a77dac76-8000-49b9-b965-590b1749a472
